@@ -5,6 +5,8 @@ Under development. Adds two M-codes for controlling fans.
 * `M106 <P->` turns fan on. The optional P-word specifies the fan, if not supplied fan 0 is turned on.
 * `M107 <P->` turns fan off. The optional P-word specifies the fan, if not supplied fan 0 is turned off.
 
+The new realtime command `0x8A` can also be used to toggle fan 0 on/off even when a G-code program is running.
+
 Add a line with
 
 `#define FANS_ENABLED <n>`
@@ -18,4 +20,4 @@ Dependencies:
 Driver must have at least `<n>` [ioports port](../../templates/ioports.c) output\(s\) available. Requires grblHAL build 20210629 or later and the fans plugin added to the source tree.
 
 ---
-2021-06-29
+2021-07-07

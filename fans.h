@@ -24,5 +24,7 @@
 #pragma once
 
 void fans_init (void);
+bool fan_get_state (uint8_t fan);
+void fan_set_state (uint8_t fan, bool on);
 
 /*EOF*/

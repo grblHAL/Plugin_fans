@@ -39,10 +39,16 @@ static const char *fans[] = {
 };
 
 static uint8_t base_port;
+static uint32_t fans_on = 0;
 static user_mcode_ptrs_t user_mcode;
 static on_report_options_ptr on_report_options;
+static on_realtime_report_ptr on_realtime_report;
 static on_program_completed_ptr on_program_completed;
+on_unknown_accessory_override_ptr on_unknown_accessory_override;
 static driver_reset_ptr driver_reset;
+
+bool fan_get_state (uint8_t fan);
+void fan_set_state (uint8_t fan, bool on);
 
 static user_mcode_t userMCodeCheck (user_mcode_t mcode)
 {
@@ -57,8 +63,8 @@ static status_code_t userMCodeValidate (parser_block_t *gc_block, parameter_word
 
     switch(gc_block->user_mcode) {
 
-        case Fan_On:
-        case Fan_Off:
+        case Fan_On:    // M106
+        case Fan_Off:   // M107
             if(gc_block->words.p) {
                 if(isnan(gc_block->values.p))
                     state = Status_BadNumberFormat;
@@ -80,16 +86,17 @@ static status_code_t userMCodeValidate (parser_block_t *gc_block, parameter_word
 static void userMCodeExecute (uint_fast16_t state, parser_block_t *gc_block)
 {
     bool handled = true;
+    uint8_t fan = gc_block->words.p ? (uint8_t)gc_block->values.p : 0;
 
     if (state != STATE_CHECK_MODE)
       switch(gc_block->user_mcode) {
 
         case Fan_On:
-            hal.port.digital_out(base_port + gc_block->words.p ? (uint8_t)gc_block->values.p : 0, true);
+            fan_set_state(fan, On);
             break;
 
         case Fan_Off:
-            hal.port.digital_out(base_port + gc_block->words.p ? (uint8_t)gc_block->values.p : 0, false);
+            fan_set_state(fan, Off);
             break;
 
         default:
@@ -124,17 +131,57 @@ static void onProgramCompleted (program_flow_t program_flow, bool check_mode)
         on_program_completed(program_flow, check_mode);
 }
 
+static void onRealtimeReport (stream_write_ptr stream_write, report_tracking_flags_t report)
+{
+    if(report.fan) {
+        stream_write("|Fan:");
+        stream_write(uitoa(fans_on));
+    }
+
+    if(on_realtime_report)
+        on_realtime_report(stream_write, report);
+}
+
 static void onReportOptions (bool newopt)
 {
     on_report_options(newopt);
 
-    if(!newopt)
-        hal.stream.write("[PLUGIN:Fans v0.01]" ASCII_EOL);
+    if(!newopt) {
+        hal.stream.write("[PLUGIN:Fans v0.02]" ASCII_EOL);
+        hal.stream.write("[FANS:");
+        hal.stream.write(uitoa(FANS_ENABLE));
+        hal.stream.write("]" ASCII_EOL);
+    }
+}
+
+static void onAccessoryOverride (uint8_t cmd)
+{
+    if(cmd == CMD_OVERRIDE_FAN0_TOGGLE)
+        fan_set_state(0, !fan_get_state(0));
+    else if(on_unknown_accessory_override)
+        on_unknown_accessory_override(cmd);
 }
 
 static void warning_msg (uint_fast16_t state)
 {
     report_message("Fans plugin failed to initialize!", Message_Warning);
+}
+
+bool fan_get_state (uint8_t fan)
+{
+    return fan < FANS_ENABLE && !!(fans_on & (1 << fan));
+}
+
+void fan_set_state (uint8_t fan, bool on)
+{
+    if(fan < FANS_ENABLE) {
+        if(on)
+            fans_on |= (1 << fan);
+        else
+            fans_on &= ~(1 << fan);
+        sys.report.fan = On;
+        hal.port.digital_out(base_port + fan, on);
+    }
 }
 
 void fans_init (void)
@@ -163,6 +210,12 @@ void fans_init (void)
 
         on_report_options = grbl.on_report_options;
         grbl.on_report_options = onReportOptions;
+
+        on_realtime_report = grbl.on_realtime_report;
+        grbl.on_realtime_report = onRealtimeReport;
+
+        on_unknown_accessory_override = grbl.on_unknown_accessory_override;
+        grbl.on_unknown_accessory_override = onAccessoryOverride;
 
         on_program_completed = grbl.on_program_completed;
         grbl.on_program_completed = onProgramCompleted;
