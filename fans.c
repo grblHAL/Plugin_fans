@@ -280,7 +280,7 @@ static void report_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.03]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:Fans v0.04]" ASCII_EOL);
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
@@ -337,7 +337,7 @@ static void fan_settings_load (void)
 }
 
 // Settings descriptor used by the core when interacting with this plugin.
-static setting_details_t details = {
+static setting_details_t setting_details = {
     .settings = fan_settings,
     .n_settings = sizeof(fan_settings) / sizeof(setting_detail_t),
 #ifndef NO_SETTINGS_DESCRIPTIONS
@@ -348,11 +348,6 @@ static setting_details_t details = {
     .load = fan_settings_load,
     .restore = fan_settings_restore
 };
-
-static setting_details_t *get_settings (void)
-{
-    return &details;
-}
 
 void fans_init (void)
 {
@@ -379,8 +374,7 @@ void fans_init (void)
 
     } else if((ok = (n_ports = ioports_available(Port_Digital, Port_Output)) >= FANS_ENABLE && (nvs_address = nvs_alloc(sizeof(fan_settings_t))))) {
 
-        details.on_get_settings = grbl.on_get_settings;
-        grbl.on_get_settings = get_settings;
+        settings_register(&setting_details);
 
         strcpy(max_port, uitoa(n_ports - 1));
     }
