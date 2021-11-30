@@ -9,15 +9,26 @@ The new realtime command `0x8A` can also be used to toggle fan 0 on/off even whe
 
 Add a line with
 
-`#define FANS_ENABLED <n>`
+`#define FANS_ENABLE <n>`
 
-to _my_machine.h_ to enable `<n>` fans, e.g. `#define FANS_ENABLED 1` for one.
+to _my_machine.h_ to enable `<n>` fans, e.g. `#define FANS_ENABLE 1` for one.
 
-__NOTE:__ These M-codes are adopted from [Marlin specifications](https://marlinfw.org/docs/gcode/M106.html) \(with fewer parameter values supported\).
+If the driver supports mapping of port number to fan the following $-settings, depending on number of fans configured, are made available:
+
+`$386` for mapping aux port to Fan 0.  
+`$387` for mapping aux port to Fan 1.  
+`$388` for mapping aux port to Fan 2.  
+`$389` for mapping aux port to Fan 3.
+
+Use the `$pins` command to see which port/pin is currently assigned.
+
+__NOTE:__ A hard reset is required after changing port to fan mappings.  
+__NOTE:__ The M-codes are adopted from [Marlin specifications](https://marlinfw.org/docs/gcode/M106.html) \(with fewer parameter values supported\).
 
 Dependencies:
 
-Driver must have at least `<n>` [ioports port](../../templates/ioports.c) output\(s\) available. Requires grblHAL build 20210629 or later and the fans plugin added to the source tree.
+Driver must have at least `<n>` [ioports port](../../templates/ioports.c) output\(s\) available.
+Requires grblHAL build 20210629 or later and the fans plugin added to the source tree.
 
 ---
-2021-07-07
+2021-11-30
