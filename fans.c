@@ -218,30 +218,30 @@ static bool is_setting_available (const setting_detail_t *setting)
 }
 
 static const setting_detail_t fan_settings[] = {
-    { Setting_FanPort0, Group_AuxPorts, "Fan 0 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[0], NULL, is_setting_available },
+    { Setting_FanPort0, Group_AuxPorts, "Fan 0 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[0], NULL, is_setting_available, true },
 #if FANS_ENABLE > 1
-    { Setting_FanPort1, Group_AuxPorts, "Fan 1 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[1], NULL, is_setting_available },
+    { Setting_FanPort1, Group_AuxPorts, "Fan 1 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[1], NULL, is_setting_available, true },
 #endif
 #if FANS_ENABLE > 2
-    { Setting_FanPort2, Group_AuxPorts, "Fan 2 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[2], NULL, is_setting_available },
+    { Setting_FanPort2, Group_AuxPorts, "Fan 2 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[2], NULL, is_setting_available, true },
 #endif
 #if FANS_ENABLE > 3
-    { Setting_FanPort3, Group_AuxPorts, "Fan 3 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[3], NULL, is_setting_available }
+    { Setting_FanPort3, Group_AuxPorts, "Fan 3 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[3], NULL, is_setting_available, true }
 #endif
 };
 
 #ifndef NO_SETTINGS_DESCRIPTIONS
 
 static const setting_descr_t fan_settings_descr[] = {
-    { Setting_FanPort0, "Aux port number to use for fan 0 control." SETTINGS_HARD_RESET_REQUIRED },
+    { Setting_FanPort0, "Aux port number to use for fan 0 control." },
 #if FANS_ENABLE > 1
-    { Setting_FanPort1, "Aux port number to use for fan 1 control." SETTINGS_HARD_RESET_REQUIRED },
+    { Setting_FanPort1, "Aux port number to use for fan 1 control." },
 #endif
 #if FANS_ENABLE > 2
-    { Setting_FanPort2, "Aux port number to use for fan 2 control." SETTINGS_HARD_RESET_REQUIRED },
+    { Setting_FanPort2, "Aux port number to use for fan 2 control." },
 #endif
 #if FANS_ENABLE > 3
-    { Setting_FanPort3, "Aux port number to use for fan 3 control." SETTINGS_HARD_RESET_REQUIRED },
+    { Setting_FanPort3, "Aux port number to use for fan 3 control." },
 #endif
 };
 
