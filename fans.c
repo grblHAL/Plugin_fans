@@ -4,7 +4,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2021 Terje Io
+  Copyright (c) 2021-2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@
 
 typedef struct {
     uint8_t port[4];
+    float fan0_off_delay;
 } fan_settings_t;
 
 static const char *fan_names[] = {
@@ -49,16 +50,17 @@ static const char *fan_names[] = {
     "Fan 3"
 };
 
-static uint32_t fans_on = 0;
+static uint32_t fans_on = 0, fan_off, fan_off_delay = 0;
 static user_mcode_ptrs_t user_mcode;
 static on_report_options_ptr on_report_options;
 static on_realtime_report_ptr on_realtime_report;
+static on_execute_realtime_ptr on_execute_realtime;
 static on_program_completed_ptr on_program_completed;
 on_unknown_accessory_override_ptr on_unknown_accessory_override;
 static driver_reset_ptr driver_reset;
 static fan_settings_t fan_setting, fans;
 static uint8_t n_ports;
-static char max_port[4];
+static char max_port[4] = "0";
 static nvs_address_t nvs_address;
 
 bool fan_get_state (uint8_t fan);
@@ -110,6 +112,8 @@ static void userMCodeExecute (uint_fast16_t state, parser_block_t *gc_block)
             break;
 
         case Fan_Off:
+            if(fan == 0 && fan_off_delay)
+                fan_off_delay = 0;
             fan_set_state(fan, Off);
             break;
 
@@ -122,23 +126,33 @@ static void userMCodeExecute (uint_fast16_t state, parser_block_t *gc_block)
         user_mcode.execute(state, gc_block);
 }
 
+static void fan_poll_realtime (sys_state_t state)
+{
+    on_execute_realtime(state);
+
+    if(fan_off_delay && hal.get_elapsed_ticks() - fan_off > fan_off_delay)
+        fan_set_state(0, Off);
+}
+
 static void driverReset (void)
 {
     driver_reset();
 
     uint32_t idx = FANS_ENABLE;
     do {
-        hal.port.digital_out(fans.port[--idx], false);
+        fan_set_state(--idx, Off);
     } while(idx);
 }
 
 static void onProgramCompleted (program_flow_t program_flow, bool check_mode)
 {
-    // Add setting(s) for delayed off?
-
     uint32_t idx = FANS_ENABLE;
     do {
-        hal.port.digital_out(fans.port[--idx], false);
+        if(--idx == 0 && fan_setting.fan0_off_delay > 0.0f) {
+            fan_off = hal.get_elapsed_ticks();
+            fan_off_delay = (uint32_t)(fan_setting.fan0_off_delay * 60.0f) * 1000;
+        } else
+            fan_set_state(idx, Off);
     } while(idx);
 
     if(on_program_completed)
@@ -181,6 +195,10 @@ void fan_set_state (uint8_t fan, bool on)
             fans_on |= (1 << fan);
         else
             fans_on &= ~(1 << fan);
+
+        if(fan == 0)
+            fan_off_delay = 0;
+
         sys.report.fan = On;
         hal.port.digital_out(fans.port[fan], on);
     }
@@ -193,21 +211,21 @@ static bool is_setting_available (const setting_detail_t *setting)
     switch(setting->id) {
 
         case Setting_FanPort0:
-            available = true;
+            available = n_ports > 0;
             break;
 #if FANS_ENABLE > 1
         case Setting_FanPort1:
-            available = true;
+            available = n_ports > 1;
             break;
 #endif
 #if FANS_ENABLE > 2
         case Setting_FanPort2:
-            available = true;
+            available = n_ports > 2;
             break;
 #endif
 #if FANS_ENABLE > 3
         case Setting_FanPort3:
-            available = true;
+            available = n_ports > 3;
             break;
 #endif
         default:
@@ -218,6 +236,7 @@ static bool is_setting_available (const setting_detail_t *setting)
 }
 
 static const setting_detail_t fan_settings[] = {
+    { Setting_Fan0OffDelay, Group_Coolant, "Fan 0 off delay", "minutes", Format_Decimal, "#0.0", "0.0", "30.0", Setting_NonCore, &fan_setting.fan0_off_delay, NULL, NULL, false },
     { Setting_FanPort0, Group_AuxPorts, "Fan 0 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[0], NULL, is_setting_available, true },
 #if FANS_ENABLE > 1
     { Setting_FanPort1, Group_AuxPorts, "Fan 1 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[1], NULL, is_setting_available, true },
@@ -233,15 +252,16 @@ static const setting_detail_t fan_settings[] = {
 #ifndef NO_SETTINGS_DESCRIPTIONS
 
 static const setting_descr_t fan_settings_descr[] = {
-    { Setting_FanPort0, "Aux port number to use for fan 0 control." },
+    { Setting_Fan0OffDelay, "Delay before turning fan 0 off after program end." },
+    { Setting_FanPort0, "Aux output port number to use for fan 0 control." },
 #if FANS_ENABLE > 1
-    { Setting_FanPort1, "Aux port number to use for fan 1 control." },
+    { Setting_FanPort1, "Aux output port number to use for fan 1 control." },
 #endif
 #if FANS_ENABLE > 2
-    { Setting_FanPort2, "Aux port number to use for fan 2 control." },
+    { Setting_FanPort2, "Aux output port number to use for fan 2 control." },
 #endif
 #if FANS_ENABLE > 3
-    { Setting_FanPort3, "Aux port number to use for fan 3 control." },
+    { Setting_FanPort3, "Aux output port number to use for fan 3 control." },
 #endif
 };
 
@@ -257,10 +277,12 @@ static void fan_settings_save (void)
 // Default is highest numbered free port.
 static void fan_settings_restore (void)
 {
-    uint8_t base_port = n_ports - FANS_ENABLE;
+    fan_setting.fan0_off_delay = 0.0f;
 
-    if(hal.port.set_pin_description) {
+    if(n_ports) {
         uint32_t idx = FANS_ENABLE;
+        uint8_t base_port = n_ports - FANS_ENABLE;
+
         do {
             idx--;
             fans.port[idx] = base_port + idx;
@@ -280,7 +302,7 @@ static void report_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.04]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:Fans v0.06]" ASCII_EOL);
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
@@ -297,6 +319,11 @@ static void fan_setup (void)
 
     driver_reset = hal.driver_reset;
     hal.driver_reset = driverReset;
+
+    if(fan_setting.fan0_off_delay != 0.0f) {
+        on_execute_realtime = grbl.on_execute_realtime;
+        grbl.on_execute_realtime = fan_poll_realtime;
+    }
 
     on_realtime_report = grbl.on_realtime_report;
     grbl.on_realtime_report = onRealtimeReport;
@@ -316,24 +343,41 @@ static void fan_settings_load (void)
         fan_settings_restore();
 
     bool ok = true;
-    uint8_t idx = FANS_ENABLE;
 
-    do {
-        idx--;
+    if(n_ports)  {
 
-        // Sanity check
-        if(fan_setting.port[idx] >= n_ports)
-            fan_setting.port[idx] = n_ports - 1;
+        uint8_t idx = FANS_ENABLE;
 
-        fans.port[idx] = fan_setting.port[idx];
-        ok = ioport_claim(Port_Digital, Port_Output, &fans.port[idx], fan_names[idx]);
+        do {
+            idx--;
 
-    } while(idx && ok);
+            // Sanity check
+            if(fan_setting.port[idx] >= n_ports)
+                fan_setting.port[idx] = n_ports - 1;
+
+            fans.port[idx] = fan_setting.port[idx];
+            ok = ioport_claim(Port_Digital, Port_Output, &fans.port[idx], fan_names[idx]);
+
+        } while(idx && ok);
+    }
 
     if(ok)
         fan_setup();
     else
         protocol_enqueue_rt_command(warning_no_port);
+}
+
+void on_settings_changed (settings_t *settings)
+{
+    if(fan_setting.fan0_off_delay == 0.0f) {
+        if(grbl.on_execute_realtime == fan_poll_realtime) {
+            grbl.on_execute_realtime = on_execute_realtime;
+            on_execute_realtime = NULL;
+        }
+    } else if(on_execute_realtime == NULL) {
+        on_execute_realtime = grbl.on_execute_realtime;
+        grbl.on_execute_realtime = fan_poll_realtime;
+    }
 }
 
 // Settings descriptor used by the core when interacting with this plugin.
@@ -346,40 +390,35 @@ static setting_details_t setting_details = {
 #endif
     .save = fan_settings_save,
     .load = fan_settings_load,
-    .restore = fan_settings_restore
+    .restore = fan_settings_restore,
+    .on_changed = on_settings_changed
 };
 
 void fans_init (void)
 {
-    bool ok = false;
+    bool ok;
 
     if(!ioport_can_claim_explicit()) {
 
-        if(hal.port.num_digital_out >= FANS_ENABLE) {
+        if((ok = hal.port.num_digital_out >= FANS_ENABLE)) {
 
             hal.port.num_digital_out -= FANS_ENABLE;
             uint8_t base_port = hal.port.num_digital_out;
 
-            if(hal.port.set_pin_description) {
-                uint32_t idx = FANS_ENABLE;
-                do {
-                    idx--;
-                    fans.port[idx] = base_port + idx;
-                    hal.port.set_pin_description(true, true, fans.port[idx], fan_names[idx]);
-                } while(idx);
-            }
+            uint32_t idx = FANS_ENABLE;
+            do {
+                idx--;
+                fans.port[idx] = base_port + idx;
+                if(hal.port.set_pin_description)
+                    hal.port.set_pin_description(Port_Digital, Port_Output, fans.port[idx], fan_names[idx]);
+            } while(idx);
         }
+    } else if((ok = (n_ports = ioports_available(Port_Digital, Port_Output)) >= FANS_ENABLE))
+        strcpy(max_port, uitoa(n_ports - 1));
 
-        fan_setup();
-
-    } else if((ok = (n_ports = ioports_available(Port_Digital, Port_Output)) >= FANS_ENABLE && (nvs_address = nvs_alloc(sizeof(fan_settings_t))))) {
+    if((ok = ok && (nvs_address = nvs_alloc(sizeof(fan_settings_t))))) {
 
         settings_register(&setting_details);
-
-        strcpy(max_port, uitoa(n_ports - 1));
-    }
-
-    if(ok) {
 
         on_report_options = grbl.on_report_options;
         grbl.on_report_options = report_options;
