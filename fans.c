@@ -236,16 +236,16 @@ static bool is_setting_available (const setting_detail_t *setting)
 }
 
 static const setting_detail_t fan_settings[] = {
-    { Setting_Fan0OffDelay, Group_Coolant, "Fan 0 off delay", "minutes", Format_Decimal, "#0.0", "0.0", "30.0", Setting_NonCore, &fan_setting.fan0_off_delay, NULL, NULL, false },
-    { Setting_FanPort0, Group_AuxPorts, "Fan 0 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[0], NULL, is_setting_available, true },
+    { Setting_Fan0OffDelay, Group_Coolant, "Fan 0 off delay", "minutes", Format_Decimal, "#0.0", "0.0", "30.0", Setting_NonCore, &fan_setting.fan0_off_delay, NULL, NULL },
+    { Setting_FanPort0, Group_AuxPorts, "Fan 0 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[0], NULL, is_setting_available, { .reboot_required = On } },
 #if FANS_ENABLE > 1
-    { Setting_FanPort1, Group_AuxPorts, "Fan 1 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[1], NULL, is_setting_available, true },
+    { Setting_FanPort1, Group_AuxPorts, "Fan 1 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[1], NULL, is_setting_available, { .reboot_required = On } },
 #endif
 #if FANS_ENABLE > 2
-    { Setting_FanPort2, Group_AuxPorts, "Fan 2 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[2], NULL, is_setting_available, true },
+    { Setting_FanPort2, Group_AuxPorts, "Fan 2 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[2], NULL, is_setting_available, { .reboot_required = On } },
 #endif
 #if FANS_ENABLE > 3
-    { Setting_FanPort3, Group_AuxPorts, "Fan 3 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[3], NULL, is_setting_available, true }
+    { Setting_FanPort3, Group_AuxPorts, "Fan 3 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[3], NULL, is_setting_available, { .reboot_required = On } }
 #endif
 };
 
