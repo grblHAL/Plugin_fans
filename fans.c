@@ -4,7 +4,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2021-2022 Terje Io
+  Copyright (c) 2021-2023 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -37,9 +37,11 @@
 #include "grbl/hal.h"
 #include "grbl/protocol.h"
 #include "grbl/nvs_buffer.h"
+#include "grbl/spindle_control.h"
 
 typedef struct {
     uint8_t port[4];
+    uint8_t spindle_link;
     float fan0_off_delay;
 } fan_settings_t;
 
@@ -50,12 +52,14 @@ static const char *fan_names[] = {
     "Fan 3"
 };
 
-static uint32_t fans_on = 0, fan_off, fan_off_delay = 0;
+static uint32_t fans_on = 0, fans_linked = 0, fan_off, fan_off_delay = 0;
 static user_mcode_ptrs_t user_mcode;
+static on_spindle_select_ptr on_spindle_select;
 static on_report_options_ptr on_report_options;
 static on_realtime_report_ptr on_realtime_report;
 static on_execute_realtime_ptr on_execute_realtime;
 static on_program_completed_ptr on_program_completed;
+static spindle_set_state_ptr on_spindle_set_state, fan_spindle_set_state = NULL;
 on_unknown_accessory_override_ptr on_unknown_accessory_override;
 static driver_reset_ptr driver_reset;
 static fan_settings_t fan_setting, fans;
@@ -144,6 +148,42 @@ static void driverReset (void)
     } while(idx);
 }
 
+static void onSpindleSetState (spindle_state_t state, float rpm)
+{
+    uint32_t idx = FANS_ENABLE;
+    do {
+        if(bit_true(fan_setting.spindle_link, bit(--idx))) {
+
+            if(!state.on && bit_isfalse(fans_linked, bit(idx)))
+                continue;
+
+            if(state.on && !fan_get_state(idx))
+                bit_true(fans_linked, bit(idx));
+
+            if(idx == 0 && !state.on && fan_setting.fan0_off_delay > 0.0f) {
+                fan_off = hal.get_elapsed_ticks();
+                fan_off_delay = (uint32_t)(fan_setting.fan0_off_delay * 60.0f) * 1000;
+            } else
+                fan_set_state(idx, state.on);
+        }
+    } while(idx);
+
+    on_spindle_set_state(state, rpm);
+}
+
+static bool onSpindleSelect (spindle_id_t spindle_id)
+{
+//    const spindle_ptrs_t *spindle = spindle_get(spindle_id);
+
+    on_spindle_set_state = hal.spindle.set_state;
+    hal.spindle.set_state = onSpindleSetState;
+
+    if(on_spindle_select)
+        on_spindle_select(spindle_id);
+
+    return true;
+}
+
 static void onProgramCompleted (program_flow_t program_flow, bool check_mode)
 {
     uint32_t idx = FANS_ENABLE;
@@ -192,15 +232,23 @@ void fan_set_state (uint8_t fan, bool on)
 {
     if(fan < FANS_ENABLE) {
         if(on)
-            fans_on |= (1 << fan);
-        else
-            fans_on &= ~(1 << fan);
+            bit_true(fans_on, bit(fan));
+        else {
+            bit_false(fans_on, bit(fan));
+            bit_false(fans_linked, bit(fan));
+        }
 
         if(fan == 0)
             fan_off_delay = 0;
 
         sys.report.fan = On;
-        hal.port.digital_out(fans.port[fan], on);
+
+        if(fan == 0 && fan_spindle_set_state) {
+            spindle_state_t state = {0};
+            state.on = on;
+            fan_spindle_set_state(state, 0.0f);
+        } else
+            hal.port.digital_out(fans.port[fan], on);
     }
 }
 
@@ -211,21 +259,24 @@ static bool is_setting_available (const setting_detail_t *setting)
     switch(setting->id) {
 
         case Setting_FanPort0:
-            available = n_ports > 0;
+            available = fans.port[0] != 0xFF;;
             break;
+
 #if FANS_ENABLE > 1
         case Setting_FanPort1:
-            available = n_ports > 1;
+            available = fans.port[1] != 0xFF;
             break;
 #endif
+
 #if FANS_ENABLE > 2
         case Setting_FanPort2:
-            available = n_ports > 2;
+            available = fans.port[2] != 0xFF;
             break;
 #endif
+
 #if FANS_ENABLE > 3
         case Setting_FanPort3:
-            available = n_ports > 3;
+            available = fans.port[3] != 0xFF;
             break;
 #endif
         default:
@@ -238,14 +289,26 @@ static bool is_setting_available (const setting_detail_t *setting)
 static const setting_detail_t fan_settings[] = {
     { Setting_Fan0OffDelay, Group_Coolant, "Fan 0 off delay", "minutes", Format_Decimal, "#0.0", "0.0", "30.0", Setting_NonCore, &fan_setting.fan0_off_delay, NULL, NULL },
     { Setting_FanPort0, Group_AuxPorts, "Fan 0 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[0], NULL, is_setting_available, { .reboot_required = On } },
+#if FANS_ENABLE == 1
+    { Setting_FanToSpindleLink, Group_Spindle, "Fan to spindle enable link", NULL, Format_Bool, NULL, NULL, NULL, Setting_NonCore, &fan_setting.spindle_link, NULL, NULL },
+#endif
 #if FANS_ENABLE > 1
     { Setting_FanPort1, Group_AuxPorts, "Fan 1 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[1], NULL, is_setting_available, { .reboot_required = On } },
+#endif
+#if FANS_ENABLE == 2
+    { Setting_FanToSpindleLink, Group_Spindle, "Fan to spindle enable link", NULL, Format_Bitfield, "Fan 0,Fan 1", NULL, NULL, Setting_NonCore, &fan_setting.spindle_link, NULL, NULL },
 #endif
 #if FANS_ENABLE > 2
     { Setting_FanPort2, Group_AuxPorts, "Fan 2 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[2], NULL, is_setting_available, { .reboot_required = On } },
 #endif
+#if FANS_ENABLE == 3
+    { Setting_FanToSpindleLink, Group_Spindle, "Fan to spindle enable link", NULL, Format_Bitfield, "Fan 0,Fan 1,Fan 2", NULL, NULL, Setting_NonCore, &fan_setting.spindle_link, NULL, NULL },
+#endif
 #if FANS_ENABLE > 3
-    { Setting_FanPort3, Group_AuxPorts, "Fan 3 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[3], NULL, is_setting_available, { .reboot_required = On } }
+    { Setting_FanPort3, Group_AuxPorts, "Fan 3 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[3], NULL, is_setting_available, { .reboot_required = On } },
+#endif
+#if FANS_ENABLE == 4
+    { Setting_FanToSpindleLink, Group_Spindle, "Fan to spindle enable link", NULL, Format_Bitfield, "Fan 0,Fan1,Fan 2, Fan 3", NULL, NULL, Setting_NonCore, &fan_setting.spindle_link, NULL, NULL },
 #endif
 };
 
@@ -254,6 +317,7 @@ static const setting_detail_t fan_settings[] = {
 static const setting_descr_t fan_settings_descr[] = {
     { Setting_Fan0OffDelay, "Delay before turning fan 0 off after program end." },
     { Setting_FanPort0, "Aux output port number to use for fan 0 control." },
+    { Setting_FanToSpindleLink, "Link fan enable signal to spindle enable, fan 0 with optional off delay." },
 #if FANS_ENABLE > 1
     { Setting_FanPort1, "Aux output port number to use for fan 1 control." },
 #endif
@@ -277,6 +341,7 @@ static void fan_settings_save (void)
 // Default is highest numbered free port.
 static void fan_settings_restore (void)
 {
+    fan_setting.spindle_link = 0;
     fan_setting.fan0_off_delay = 0.0f;
 
     if(n_ports) {
@@ -284,8 +349,8 @@ static void fan_settings_restore (void)
         uint8_t base_port = n_ports - FANS_ENABLE;
 
         do {
-            idx--;
-            fans.port[idx] = base_port + idx;
+            if(--idx != 0 || fan_spindle_set_state == NULL)
+                fans.port[idx] = base_port + idx;
         } while(idx);
     }
 
@@ -307,6 +372,13 @@ static void report_options (bool newopt)
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
     }
+}
+
+void spindle_enumerate (spindle_info_t *spindle)
+{
+// TODO: needs evaluation - may be a dangerous approach to using the driver spindle...
+//    if(!spindle->is_current && (spindle->hal->type == SpindleType_Basic || spindle->hal->type == SpindleType_PWM))
+//        fan_spindle_set_state = spindle->hal->set_state;
 }
 
 static void fan_setup (void)
@@ -339,6 +411,8 @@ static void fan_setup (void)
 // If load fails restore to default values.
 static void fan_settings_load (void)
 {
+    spindle_enumerate_spindles(spindle_enumerate);
+
     if(hal.nvs.memcpy_from_nvs((uint8_t *)&fan_setting, nvs_address, sizeof(fan_settings_t), true) != NVS_TransferResult_OK)
         fan_settings_restore();
 
@@ -349,15 +423,15 @@ static void fan_settings_load (void)
         uint8_t idx = FANS_ENABLE;
 
         do {
-            idx--;
+            if(--idx != 0 || fan_spindle_set_state == NULL) {
+                // Sanity check
+                if(fan_setting.port[idx] >= n_ports)
+                    fan_setting.port[idx] = n_ports - 1;
 
-            // Sanity check
-            if(fan_setting.port[idx] >= n_ports)
-                fan_setting.port[idx] = n_ports - 1;
-
-            fans.port[idx] = fan_setting.port[idx];
-            ok = ioport_claim(Port_Digital, Port_Output, &fans.port[idx], fan_names[idx]);
-
+                fans.port[idx] = fan_setting.port[idx];
+                if(!(ok = ioport_claim(Port_Digital, Port_Output, &fans.port[idx], fan_names[idx])))
+                    fans.port[idx] = 0xFE;
+            }
         } while(idx && ok);
     }
 
@@ -397,6 +471,11 @@ static setting_details_t setting_details = {
 void fans_init (void)
 {
     bool ok;
+    uint32_t idx = FANS_ENABLE;
+
+    do {
+        fans.port[--idx] = 0xFF;
+    } while(idx);
 
     if(!ioport_can_claim_explicit()) {
 
@@ -405,7 +484,7 @@ void fans_init (void)
             hal.port.num_digital_out -= FANS_ENABLE;
             uint8_t base_port = hal.port.num_digital_out;
 
-            uint32_t idx = FANS_ENABLE;
+            idx = FANS_ENABLE;
             do {
                 idx--;
                 fans.port[idx] = base_port + idx;
@@ -422,6 +501,9 @@ void fans_init (void)
 
         on_report_options = grbl.on_report_options;
         grbl.on_report_options = report_options;
+
+        on_spindle_select = grbl.on_spindle_select;
+        grbl.on_spindle_select = onSpindleSelect;
 
     } else
         protocol_enqueue_rt_command(warning_msg);
