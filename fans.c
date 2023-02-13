@@ -171,17 +171,12 @@ static void onSpindleSetState (spindle_state_t state, float rpm)
     on_spindle_set_state(state, rpm);
 }
 
-static bool onSpindleSelect (spindle_id_t spindle_id)
+static bool onSpindleSelect (spindle_ptrs_t *spindle)
 {
-//    const spindle_ptrs_t *spindle = spindle_get(spindle_id);
+    on_spindle_set_state = spindle->set_state;
+    spindle->set_state = onSpindleSetState;
 
-    on_spindle_set_state = hal.spindle.set_state;
-    hal.spindle.set_state = onSpindleSetState;
-
-    if(on_spindle_select)
-        on_spindle_select(spindle_id);
-
-    return true;
+    return on_spindle_select == NULL || on_spindle_select(spindle);
 }
 
 static void onProgramCompleted (program_flow_t program_flow, bool check_mode)
@@ -367,7 +362,7 @@ static void report_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.06]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:Fans v0.07]" ASCII_EOL);
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
@@ -441,7 +436,7 @@ static void fan_settings_load (void)
         protocol_enqueue_rt_command(warning_no_port);
 }
 
-void on_settings_changed (settings_t *settings)
+void on_settings_changed (settings_t *settings, settings_changed_flags_t changed)
 {
     if(fan_setting.fan0_off_delay == 0.0f) {
         if(grbl.on_execute_realtime == fan_poll_realtime) {
