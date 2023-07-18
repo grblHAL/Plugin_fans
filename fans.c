@@ -362,14 +362,14 @@ static void report_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.07]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:Fans v0.08]" ASCII_EOL);
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
     }
 }
 
-void spindle_enumerate (spindle_info_t *spindle)
+void spindle_enumerate (spindle_info_t *spindle, void *data)
 {
 // TODO: needs evaluation - may be a dangerous approach to using the driver spindle...
 //    if(!spindle->is_current && (spindle->hal->type == SpindleType_Basic || spindle->hal->type == SpindleType_PWM))
@@ -406,7 +406,7 @@ static void fan_setup (void)
 // If load fails restore to default values.
 static void fan_settings_load (void)
 {
-    spindle_enumerate_spindles(spindle_enumerate);
+    spindle_enumerate_spindles(spindle_enumerate, NULL);
 
     if(hal.nvs.memcpy_from_nvs((uint8_t *)&fan_setting, nvs_address, sizeof(fan_settings_t), true) != NVS_TransferResult_OK)
         fan_settings_restore();
