@@ -152,7 +152,7 @@ static void onSpindleSetState (spindle_state_t state, float rpm)
 {
     uint32_t idx = FANS_ENABLE;
     do {
-        if(bit_true(fan_setting.spindle_link, bit(--idx))) {
+        if(bit_istrue(fan_setting.spindle_link, bit(--idx))) {
 
             if(!state.on && bit_isfalse(fans_linked, bit(idx)))
                 continue;
@@ -303,7 +303,7 @@ static const setting_detail_t fan_settings[] = {
     { Setting_FanPort3, Group_AuxPorts, "Fan 3 port", NULL, Format_Int8, "#0", "0", max_port, Setting_NonCore, &fan_setting.port[3], NULL, is_setting_available, { .reboot_required = On } },
 #endif
 #if FANS_ENABLE == 4
-    { Setting_FanToSpindleLink, Group_Spindle, "Fan to spindle enable link", NULL, Format_Bitfield, "Fan 0,Fan1,Fan 2, Fan 3", NULL, NULL, Setting_NonCore, &fan_setting.spindle_link, NULL, NULL },
+    { Setting_FanToSpindleLink, Group_Spindle, "Fan to spindle enable link", NULL, Format_Bitfield, "Fan 0,Fan 1,Fan 2,Fan 3", NULL, NULL, Setting_NonCore, &fan_setting.spindle_link, NULL, NULL },
 #endif
 };
 
@@ -345,7 +345,7 @@ static void fan_settings_restore (void)
 
         do {
             if(--idx != 0 || fan_spindle_set_state == NULL)
-                fans.port[idx] = base_port + idx;
+                fan_setting.port[idx] = base_port + idx;
         } while(idx);
     }
 
@@ -362,7 +362,7 @@ static void report_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.08]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:Fans v0.09]" ASCII_EOL);
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
