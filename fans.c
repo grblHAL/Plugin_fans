@@ -362,14 +362,14 @@ static void report_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.09]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:Fans v0.10]" ASCII_EOL);
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
     }
 }
 
-void spindle_enumerate (spindle_info_t *spindle, void *data)
+static void spindle_enumerate (spindle_info_t *spindle, void *data)
 {
 // TODO: needs evaluation - may be a dangerous approach to using the driver spindle...
 //    if(!spindle->is_current && (spindle->hal->type == SpindleType_Basic || spindle->hal->type == SpindleType_PWM))
@@ -436,7 +436,7 @@ static void fan_settings_load (void)
         protocol_enqueue_rt_command(warning_no_port);
 }
 
-void on_settings_changed (settings_t *settings, settings_changed_flags_t changed)
+static void on_settings_changed (settings_t *settings, settings_changed_flags_t changed)
 {
     if(fan_setting.fan0_off_delay == 0.0f) {
         if(grbl.on_execute_realtime == fan_poll_realtime) {
