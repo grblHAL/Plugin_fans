@@ -148,7 +148,7 @@ static void driverReset (void)
     } while(idx);
 }
 
-static void onSpindleSetState (spindle_state_t state, float rpm)
+static void onSpindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, float rpm)
 {
     uint32_t idx = FANS_ENABLE;
     do {
@@ -168,7 +168,7 @@ static void onSpindleSetState (spindle_state_t state, float rpm)
         }
     } while(idx);
 
-    on_spindle_set_state(state, rpm);
+    on_spindle_set_state(spindle, state, rpm);
 }
 
 static bool onSpindleSelect (spindle_ptrs_t *spindle)
@@ -241,7 +241,7 @@ void fan_set_state (uint8_t fan, bool on)
         if(fan == 0 && fan_spindle_set_state) {
             spindle_state_t state = {0};
             state.on = on;
-            fan_spindle_set_state(state, 0.0f);
+            fan_spindle_set_state(NULL, state, 0.0f);
         } else
             hal.port.digital_out(fans.port[fan], on);
     }
@@ -362,7 +362,7 @@ static void report_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.10]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:Fans v0.11]" ASCII_EOL);
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
