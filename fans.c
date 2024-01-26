@@ -4,7 +4,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2021-2023 Terje Io
+  Copyright (c) 2021-2024 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -213,11 +213,6 @@ static void onAccessoryOverride (uint8_t cmd)
         on_unknown_accessory_override(cmd);
 }
 
-static void warning_msg (uint_fast16_t state)
-{
-    report_message("Fans plugin failed to initialize!", Message_Warning);
-}
-
 bool fan_get_state (uint8_t fan)
 {
     return fan < FANS_ENABLE && !!(fans_on & (1 << fan));
@@ -352,17 +347,12 @@ static void fan_settings_restore (void)
     hal.nvs.memcpy_to_nvs(nvs_address, (uint8_t *)&fan_setting, sizeof(fan_settings_t), true);
 }
 
-static void warning_no_port (uint_fast16_t state)
-{
-    report_message("Fans plugin: configured port number(s) not available", Message_Warning);
-}
-
 static void report_options (bool newopt)
 {
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.11]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:Fans v0.12]" ASCII_EOL);
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
@@ -433,7 +423,7 @@ static void fan_settings_load (void)
     if(ok)
         fan_setup();
     else
-        protocol_enqueue_rt_command(warning_no_port);
+        protocol_enqueue_foreground_task(report_warning, "Fans plugin: configured port number(s) not available");
 }
 
 static void on_settings_changed (settings_t *settings, settings_changed_flags_t changed)
@@ -501,7 +491,7 @@ void fans_init (void)
         grbl.on_spindle_select = onSpindleSelect;
 
     } else
-        protocol_enqueue_rt_command(warning_msg);
+        protocol_enqueue_foreground_task(report_warning, "Fans plugin failed to initialize!");
 }
 
 #endif
