@@ -6,18 +6,18 @@
 
   Copyright (c) 2021-2024 Terje Io
 
-  Grbl is free software: you can redistribute it and/or modify
+  grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Grbl is distributed in the hope that it will be useful,
+  grblHAL is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
+  along with grblHAL. If not, see <http://www.gnu.org/licenses/>.
 
 */
 
@@ -52,15 +52,14 @@ static const char *fan_names[] = {
     "Fan 3"
 };
 
-static uint32_t fans_on = 0, fans_linked = 0, fan_off, fan_off_delay = 0;
+static uint32_t fans_on = 0, fans_linked = 0;
 static user_mcode_ptrs_t user_mcode;
 static on_spindle_select_ptr on_spindle_select;
 static on_report_options_ptr on_report_options;
 static on_realtime_report_ptr on_realtime_report;
-static on_execute_realtime_ptr on_execute_realtime;
 static on_program_completed_ptr on_program_completed;
 static spindle_set_state_ptr on_spindle_set_state, fan_spindle_set_state = NULL;
-on_unknown_accessory_override_ptr on_unknown_accessory_override;
+static on_unknown_accessory_override_ptr on_unknown_accessory_override;
 static driver_reset_ptr driver_reset;
 static fan_settings_t fan_setting, fans;
 static uint8_t n_ports;
@@ -103,6 +102,11 @@ static status_code_t userMCodeValidate (parser_block_t *gc_block, parameter_word
     return state == Status_Unhandled && user_mcode.validate ? user_mcode.validate(gc_block, deprecated) : state;
 }
 
+static void fan_off (void *data)
+{
+    fan_set_state(0, Off);
+}
+
 static void userMCodeExecute (uint_fast16_t state, parser_block_t *gc_block)
 {
     bool handled = true;
@@ -116,8 +120,8 @@ static void userMCodeExecute (uint_fast16_t state, parser_block_t *gc_block)
             break;
 
         case Fan_Off:
-            if(fan == 0 && fan_off_delay)
-                fan_off_delay = 0;
+            if(fan == 0)
+                task_delete(fan_off, NULL);
             fan_set_state(fan, Off);
             break;
 
@@ -128,14 +132,6 @@ static void userMCodeExecute (uint_fast16_t state, parser_block_t *gc_block)
 
     if(!handled && user_mcode.execute)
         user_mcode.execute(state, gc_block);
-}
-
-static void fan_poll_realtime (sys_state_t state)
-{
-    on_execute_realtime(state);
-
-    if(fan_off_delay && hal.get_elapsed_ticks() - fan_off > fan_off_delay)
-        fan_set_state(0, Off);
 }
 
 static void driverReset (void)
@@ -160,10 +156,9 @@ static void onSpindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, f
             if(state.on && !fan_get_state(idx))
                 bit_true(fans_linked, bit(idx));
 
-            if(idx == 0 && !state.on && fan_setting.fan0_off_delay > 0.0f) {
-                fan_off = hal.get_elapsed_ticks();
-                fan_off_delay = (uint32_t)(fan_setting.fan0_off_delay * 60.0f) * 1000;
-            } else
+            if(idx == 0 && !state.on && fan_setting.fan0_off_delay > 0.0f)
+                task_add_delayed(fan_off, NULL, (uint32_t)(fan_setting.fan0_off_delay * 60.0f * 1000.0f));
+            else
                 fan_set_state(idx, state.on);
         }
     } while(idx);
@@ -183,10 +178,9 @@ static void onProgramCompleted (program_flow_t program_flow, bool check_mode)
 {
     uint32_t idx = FANS_ENABLE;
     do {
-        if(--idx == 0 && fan_setting.fan0_off_delay > 0.0f) {
-            fan_off = hal.get_elapsed_ticks();
-            fan_off_delay = (uint32_t)(fan_setting.fan0_off_delay * 60.0f) * 1000;
-        } else
+        if(--idx == 0 && fan_setting.fan0_off_delay > 0.0f)
+            task_add_delayed(fan_off, NULL, (uint32_t)(fan_setting.fan0_off_delay * 60.0f * 1000.0f));
+        else
             fan_set_state(idx, Off);
     } while(idx);
 
@@ -229,7 +223,7 @@ void fan_set_state (uint8_t fan, bool on)
         }
 
         if(fan == 0)
-            fan_off_delay = 0;
+            task_delete(fan_off, NULL);
 
         sys.report.fan = On;
 
@@ -352,7 +346,7 @@ static void report_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.12]" ASCII_EOL);
+        hal.stream.write("[PLUGIN:Fans v0.13]" ASCII_EOL);
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
@@ -376,11 +370,6 @@ static void fan_setup (void)
 
     driver_reset = hal.driver_reset;
     hal.driver_reset = driverReset;
-
-    if(fan_setting.fan0_off_delay != 0.0f) {
-        on_execute_realtime = grbl.on_execute_realtime;
-        grbl.on_execute_realtime = fan_poll_realtime;
-    }
 
     on_realtime_report = grbl.on_realtime_report;
     grbl.on_realtime_report = onRealtimeReport;
@@ -426,19 +415,6 @@ static void fan_settings_load (void)
         protocol_enqueue_foreground_task(report_warning, "Fans plugin: configured port number(s) not available");
 }
 
-static void on_settings_changed (settings_t *settings, settings_changed_flags_t changed)
-{
-    if(fan_setting.fan0_off_delay == 0.0f) {
-        if(grbl.on_execute_realtime == fan_poll_realtime) {
-            grbl.on_execute_realtime = on_execute_realtime;
-            on_execute_realtime = NULL;
-        }
-    } else if(on_execute_realtime == NULL) {
-        on_execute_realtime = grbl.on_execute_realtime;
-        grbl.on_execute_realtime = fan_poll_realtime;
-    }
-}
-
 // Settings descriptor used by the core when interacting with this plugin.
 static setting_details_t setting_details = {
     .settings = fan_settings,
@@ -449,8 +425,7 @@ static setting_details_t setting_details = {
 #endif
     .save = fan_settings_save,
     .load = fan_settings_load,
-    .restore = fan_settings_restore,
-    .on_changed = on_settings_changed
+    .restore = fan_settings_restore
 };
 
 void fans_init (void)
