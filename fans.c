@@ -69,14 +69,14 @@ static nvs_address_t nvs_address;
 bool fan_get_state (uint8_t fan);
 void fan_set_state (uint8_t fan, bool on);
 
-static user_mcode_t userMCodeCheck (user_mcode_t mcode)
+static user_mcode_type_t userMCodeCheck (user_mcode_t mcode)
 {
     return mcode == Fan_On || mcode == Fan_Off
-            ? mcode
-            : (user_mcode.check ? user_mcode.check(mcode) : UserMCode_Ignore);
+            ? UserMCode_Normal
+            : (user_mcode.check ? user_mcode.check(mcode) : UserMCode_Unsupported);
 }
 
-static status_code_t userMCodeValidate (parser_block_t *gc_block, parameter_words_t *deprecated)
+static status_code_t userMCodeValidate (parser_block_t *gc_block)
 {
     status_code_t state = Status_OK;
 
@@ -85,9 +85,7 @@ static status_code_t userMCodeValidate (parser_block_t *gc_block, parameter_word
         case Fan_On:    // M106
         case Fan_Off:   // M107
             if(gc_block->words.p) {
-                if(isnan(gc_block->values.p))
-                    state = Status_BadNumberFormat;
-                else if(!isintf(gc_block->values.p) || gc_block->values.p < 0.0f  || gc_block->values.p >= (float)FANS_ENABLE)
+                if(!isintf(gc_block->values.p) || gc_block->values.p < 0.0f  || gc_block->values.p >= (float)FANS_ENABLE)
                     state = Status_GcodeValueOutOfRange;
                 else
                     gc_block->words.p = Off;
@@ -99,7 +97,7 @@ static status_code_t userMCodeValidate (parser_block_t *gc_block, parameter_word
             break;
     }
 
-    return state == Status_Unhandled && user_mcode.validate ? user_mcode.validate(gc_block, deprecated) : state;
+    return state == Status_Unhandled && user_mcode.validate ? user_mcode.validate(gc_block) : state;
 }
 
 static void fan_off (void *data)
@@ -346,7 +344,7 @@ static void report_options (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        hal.stream.write("[PLUGIN:Fans v0.13]" ASCII_EOL);
+        report_plugin("Fans", "0.14");
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(FANS_ENABLE));
         hal.stream.write("]" ASCII_EOL);
@@ -362,11 +360,11 @@ static void spindle_enumerate (spindle_info_t *spindle, void *data)
 
 static void fan_setup (void)
 {
-    memcpy(&user_mcode, &hal.user_mcode, sizeof(user_mcode_ptrs_t));
+    memcpy(&user_mcode, &grbl.user_mcode, sizeof(user_mcode_ptrs_t));
 
-    hal.user_mcode.check = userMCodeCheck;
-    hal.user_mcode.validate = userMCodeValidate;
-    hal.user_mcode.execute = userMCodeExecute;
+    grbl.user_mcode.check = userMCodeCheck;
+    grbl.user_mcode.validate = userMCodeValidate;
+    grbl.user_mcode.execute = userMCodeExecute;
 
     driver_reset = hal.driver_reset;
     hal.driver_reset = driverReset;
