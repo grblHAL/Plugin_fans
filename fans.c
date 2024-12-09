@@ -351,11 +351,12 @@ static void report_options (bool newopt)
     }
 }
 
-static void spindle_enumerate (spindle_info_t *spindle, void *data)
+static bool spindle_enumerate (spindle_info_t *spindle, void *data)
 {
 // TODO: needs evaluation - may be a dangerous approach to using the driver spindle...
 //    if(!spindle->is_current && (spindle->hal->type == SpindleType_Basic || spindle->hal->type == SpindleType_PWM))
 //        fan_spindle_set_state = spindle->hal->set_state;
+    return true;
 }
 
 static void fan_setup (void)
@@ -379,8 +380,6 @@ static void fan_setup (void)
     grbl.on_program_completed = onProgramCompleted;
 }
 
-// Load our settings from non volatile storage (NVS).
-// If load fails restore to default values.
 static void fan_settings_load (void)
 {
     spindle_enumerate_spindles(spindle_enumerate, NULL);
@@ -413,21 +412,20 @@ static void fan_settings_load (void)
         protocol_enqueue_foreground_task(report_warning, "Fans plugin: configured port number(s) not available");
 }
 
-// Settings descriptor used by the core when interacting with this plugin.
-static setting_details_t setting_details = {
-    .settings = fan_settings,
-    .n_settings = sizeof(fan_settings) / sizeof(setting_detail_t),
-#ifndef NO_SETTINGS_DESCRIPTIONS
-    .descriptions = fan_settings_descr,
-    .n_descriptions = sizeof(fan_settings_descr) / sizeof(setting_descr_t),
-#endif
-    .save = fan_settings_save,
-    .load = fan_settings_load,
-    .restore = fan_settings_restore
-};
-
 void fans_init (void)
 {
+    static setting_details_t setting_details = {
+        .settings = fan_settings,
+        .n_settings = sizeof(fan_settings) / sizeof(setting_detail_t),
+    #ifndef NO_SETTINGS_DESCRIPTIONS
+        .descriptions = fan_settings_descr,
+        .n_descriptions = sizeof(fan_settings_descr) / sizeof(setting_descr_t),
+    #endif
+        .save = fan_settings_save,
+        .load = fan_settings_load,
+        .restore = fan_settings_restore
+    };
+
     bool ok;
     uint32_t idx = FANS_ENABLE;
 
