@@ -263,7 +263,7 @@ static void fan_setup (void)
     grbl.on_program_completed = onProgramCompleted;
 }
 
-static bool is_setting_available (const setting_detail_t *setting)
+static bool is_setting_available (const setting_detail_t *setting, uint_fast16_t offset)
 {
     bool available = false;
 
@@ -486,7 +486,7 @@ static void fan_settings_load (void)
         protocol_enqueue_foreground_task(report_warning, "Fans plugin: configured port number(s) not available");
 }
 
-static void report_options (bool newopt)
+static void onReportOptions (bool newopt)
 {
     on_report_options(newopt);
 
@@ -512,12 +512,14 @@ void fans_init (void)
         .restore = fan_settings_restore
     };
 
-    if(ioport_can_claim_explicit() && (nvs_address = nvs_alloc(sizeof(fan_settings_t)))) {
+    if(ioport_can_claim_explicit() &&
+       (n_ports = ioports_available(Port_Digital, Port_Input)) &&
+        (nvs_address = nvs_alloc(sizeof(fan_settings_t)))) {
 
         settings_register(&setting_details);
 
         on_report_options = grbl.on_report_options;
-        grbl.on_report_options = report_options;
+        grbl.on_report_options = onReportOptions;
 
         on_spindle_select = grbl.on_spindle_select;
         grbl.on_spindle_select = onSpindleSelect;
