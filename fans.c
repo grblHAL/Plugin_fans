@@ -230,7 +230,7 @@ void fan_set_state (uint8_t fan, bool on)
             state.on = on;
             fan_spindle_set_state(NULL, state, 0.0f);
         } else
-            hal.port.digital_out(fans.port[fan], on);
+            ioport_digital_out(fans.port[fan], on);
     }
 }
 
@@ -491,7 +491,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        report_plugin("Fans", "0.15");
+        report_plugin("Fans", "0.16");
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(n_fans));
         hal.stream.write("]" ASCII_EOL);
@@ -517,6 +517,8 @@ void fans_init (void)
         (nvs_address = nvs_alloc(sizeof(fan_settings_t)))) {
 
         settings_register(&setting_details);
+
+        strcpy(max_port, uitoa(n_ports - 1));
 
         on_report_options = grbl.on_report_options;
         grbl.on_report_options = onReportOptions;
