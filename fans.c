@@ -483,7 +483,7 @@ static void fan_settings_load (void)
         fan_setup();
 
     if(failed)
-        protocol_enqueue_foreground_task(report_warning, "Fans plugin: configured port number(s) not available");
+        task_run_on_startup(report_warning, "Fans plugin: configured port number(s) not available");
 }
 
 static void onReportOptions (bool newopt)
@@ -491,7 +491,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        report_plugin("Fans", "0.16");
+        report_plugin("Fans", "0.17");
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(n_fans));
         hal.stream.write("]" ASCII_EOL);
@@ -527,7 +527,7 @@ void fans_init (void)
         grbl.on_spindle_select = onSpindleSelect;
 
     } else
-        protocol_enqueue_foreground_task(report_warning, "Fans plugin failed to initialize!");
+        task_run_on_startup(report_warning, "Fans plugin failed to initialize!");
 }
 
 #endif
