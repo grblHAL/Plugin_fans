@@ -305,19 +305,19 @@ static status_code_t set_float (setting_id_t setting, float value)
       switch(setting) {
 
         case Setting_FanPort0:
-            fan_setting.port[0] = value < 0.0f ? 255 : (uint8_t)value;
+            fan_setting.port[0] = value < 0.0f ? IOPORT_UNASSIGNED : (uint8_t)value;
             break;
 
         case Setting_FanPort1:
-            fan_setting.port[1] = value < 0.0f ? 255 : (uint8_t)value;
+            fan_setting.port[1] = value < 0.0f ? IOPORT_UNASSIGNED : (uint8_t)value;
             break;
 
         case Setting_FanPort2:
-            fan_setting.port[2] = value < 0.0f ? 255 : (uint8_t)value;
+            fan_setting.port[2] = value < 0.0f ? IOPORT_UNASSIGNED : (uint8_t)value;
             break;
 
         case Setting_FanPort3:
-            fan_setting.port[2] = value < 0.0f ? 255 : (uint8_t)value;
+            fan_setting.port[2] = value < 0.0f ? IOPORT_UNASSIGNED : (uint8_t)value;
             break;
 
         default:
@@ -334,19 +334,19 @@ static float get_float (setting_id_t setting)
     switch(setting) {
 
         case Setting_FanPort0:
-            value = fan_setting.port[0] >= n_ports ? -1.0f : (float)fan_setting.port[0];
+            value = fan_setting.port[0] > n_ports ? -1.0f : (float)fan_setting.port[0];
             break;
 
         case Setting_FanPort1:
-            value = fan_setting.port[1] >= n_ports ? -1.0f : (float)fan_setting.port[1];
+            value = fan_setting.port[1] > n_ports ? -1.0f : (float)fan_setting.port[1];
             break;
 
         case Setting_FanPort2:
-            value = fan_setting.port[2] >= n_ports ? -1.0f : (float)fan_setting.port[2];
+            value = fan_setting.port[2] > n_ports ? -1.0f : (float)fan_setting.port[2];
             break;
 
         case Setting_FanPort3:
-            value = fan_setting.port[3] >= n_ports ? -1.0f : (float)fan_setting.port[3];
+            value = fan_setting.port[3] > n_ports ? -1.0f : (float)fan_setting.port[3];
             break;
 
         default:
@@ -402,8 +402,6 @@ static const setting_detail_t fan_settings[] = {
 #endif
 };
 
-#ifndef NO_SETTINGS_DESCRIPTIONS
-
 static const setting_descr_t fan_settings_descr[] = {
     { Setting_Fan0OffDelay, "Delay before turning fan 0 off after program end." },
     { Setting_FanPort0, "Aux output port number to use for fan 0 control. Set to -1 to disable." },
@@ -419,8 +417,6 @@ static const setting_descr_t fan_settings_descr[] = {
 #endif
 };
 
-#endif
-
 // Write settings to non volatile storage (NVS).
 static void fan_settings_save (void)
 {
@@ -435,12 +431,16 @@ static void fan_settings_restore (void)
     fan_setting.fan0_off_delay = 0.0f;
 
     if(n_ports) {
+
         uint32_t idx = FANS_ENABLE;
-        uint8_t base_port = n_ports - FANS_ENABLE;
+        uint8_t base_port = n_ports;
 
         do {
-            if(--idx != 0 || fan_spindle_set_state == NULL)
-                fan_setting.port[idx] = base_port + idx;
+            idx--;
+            if((fan_setting.port[idx] = ioport_find_free(Port_Digital, Port_Output, (pin_cap_t){ .claimable = On }, fan_names[idx])) == IOPORT_UNASSIGNED) {
+                if((fan_setting.port[idx] = base_port))
+                    base_port--;
+            }
         } while(idx);
     }
 
@@ -465,14 +465,14 @@ static void fan_settings_load (void)
         do {
             if(--idx != 0 || fan_spindle_set_state == NULL) {
                 // Sanity check
-                if(fan_setting.port[idx] >= n_ports)
-                    fan_setting.port[idx] = 0xFF;
+                if(fan_setting.port[idx] > n_ports)
+                    fan_setting.port[idx] = IOPORT_UNASSIGNED;
 
-                if((fans.port[idx] = fan_setting.port[idx]) != 0xFF && ioport_claim(Port_Digital, Port_Output, &fans.port[idx], fan_names[idx]))
+                if((fans.port[idx] = fan_setting.port[idx]) != IOPORT_UNASSIGNED && ioport_claim(Port_Digital, Port_Output, &fans.port[idx], fan_names[idx]))
                     n_fans++;
                 else {
                     failed++;
-                    fans.port[idx] = 0xFF;
+                    fans.port[idx] = IOPORT_UNASSIGNED;
                     fans.spindle_link &= ~(1 << idx);
                 }
             }
@@ -491,7 +491,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        report_plugin("Fans", "0.17");
+        report_plugin("Fans", "0.18");
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(n_fans));
         hal.stream.write("]" ASCII_EOL);
@@ -503,22 +503,21 @@ void fans_init (void)
     static setting_details_t setting_details = {
         .settings = fan_settings,
         .n_settings = sizeof(fan_settings) / sizeof(setting_detail_t),
-    #ifndef NO_SETTINGS_DESCRIPTIONS
         .descriptions = fan_settings_descr,
         .n_descriptions = sizeof(fan_settings_descr) / sizeof(setting_descr_t),
-    #endif
         .save = fan_settings_save,
         .load = fan_settings_load,
         .restore = fan_settings_restore
     };
 
     if(ioport_can_claim_explicit() &&
-       (n_ports = ioports_available(Port_Digital, Port_Input)) &&
-        (nvs_address = nvs_alloc(sizeof(fan_settings_t)))) {
+        ioports_available(Port_Digital, Port_Input) &&
+         (nvs_address = nvs_alloc(sizeof(fan_settings_t)))) {
 
         settings_register(&setting_details);
 
-        strcpy(max_port, uitoa(n_ports - 1));
+        n_ports = ioport_find_free(Port_Digital, Port_Output, (pin_cap_t){ .claimable = On }, NULL);
+        strcpy(max_port, uitoa(n_ports));
 
         on_report_options = grbl.on_report_options;
         grbl.on_report_options = onReportOptions;
