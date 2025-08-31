@@ -491,7 +491,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        report_plugin("Fans", "0.18");
+        report_plugin("Fans", "0.19");
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(n_fans));
         hal.stream.write("]" ASCII_EOL);
@@ -511,7 +511,7 @@ void fans_init (void)
     };
 
     if(ioport_can_claim_explicit() &&
-        ioports_available(Port_Digital, Port_Input) &&
+        ioports_available(Port_Digital, Port_Output) &&
          (nvs_address = nvs_alloc(sizeof(fan_settings_t)))) {
 
         settings_register(&setting_details);
