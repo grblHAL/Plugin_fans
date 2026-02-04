@@ -4,7 +4,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2021-2025 Terje Io
+  Copyright (c) 2021-2026 Terje Io
 
   grblHAL is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -223,7 +223,7 @@ void fan_set_state (uint8_t fan, bool on)
         if(fan == 0)
             task_delete(fan_off, NULL);
 
-        sys.report.fan = On;
+        report_add_realtime(Report_Fan);
 
         if(fan == 0 && fan_spindle_set_state) {
             spindle_state_t state = {0};
@@ -399,7 +399,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        report_plugin("Fans", "0.20");
+        report_plugin("Fans", "0.21");
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(n_fans));
         hal.stream.write("]" ASCII_EOL);
