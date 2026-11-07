@@ -58,7 +58,7 @@ static fan_settings_t fan_setting, fans;
 static io_port_cfg_t d_out;
 static nvs_address_t nvs_address;
 
-static on_spindle_select_ptr on_spindle_select;
+static on_spindle_selected_ptr on_spindle_selected;
 static on_report_options_ptr on_report_options;
 static on_realtime_report_ptr on_realtime_report;
 static on_program_completed_ptr on_program_completed;
@@ -163,12 +163,13 @@ static void onSpindleSetState (spindle_ptrs_t *spindle, spindle_state_t state, f
     on_spindle_set_state(spindle, state, rpm);
 }
 
-static bool onSpindleSelect (spindle_ptrs_t *spindle)
+static void onSpindleSelected (spindle_ptrs_t *spindle)
 {
+    if(on_spindle_selected)
+        on_spindle_selected(spindle);
+
     on_spindle_set_state = spindle->set_state;
     spindle->set_state = onSpindleSetState;
-
-    return on_spindle_select == NULL || on_spindle_select(spindle);
 }
 
 static void onProgramCompleted (program_flow_t program_flow, bool check_mode)
@@ -232,14 +233,6 @@ void fan_set_state (uint8_t fan, bool on)
         } else
             ioport_digital_out(fans.port[fan], on);
     }
-}
-
-static bool spindle_enumerate (spindle_info_t *spindle, void *data)
-{
-// TODO: needs evaluation - may be a dangerous approach to using the driver spindle...
-//    if(!spindle->is_current && (spindle->hal->type == SpindleType_Basic || spindle->hal->type == SpindleType_PWM))
-//        fan_spindle_set_state = spindle->hal->set_state;
-    return true;
 }
 
 static void fan_setup (void)
@@ -364,10 +357,7 @@ static void fan_settings_restore (void)
 
 static void fan_settings_load (void)
 {
-    uint_fast8_t failed = 0;
-    uint_fast8_t idx = FANS_ENABLE;
-
-    spindle_enumerate_spindles(spindle_enumerate, NULL);
+    uint_fast8_t failed = 0, idx = FANS_ENABLE;
 
     if(hal.nvs.memcpy_from_nvs((uint8_t *)&fan_setting, nvs_address, sizeof(fan_settings_t), true) != NVS_TransferResult_OK)
         fan_settings_restore();
@@ -399,7 +389,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt) {
-        report_plugin("Fans", "0.21");
+        report_plugin("Fans", "0.22");
         hal.stream.write("[FANS:");
         hal.stream.write(uitoa(n_fans));
         hal.stream.write("]" ASCII_EOL);
@@ -425,8 +415,8 @@ void fans_init (void)
         on_report_options = grbl.on_report_options;
         grbl.on_report_options = onReportOptions;
 
-        on_spindle_select = grbl.on_spindle_select;
-        grbl.on_spindle_select = onSpindleSelect;
+        on_spindle_selected = grbl.on_spindle_selected;
+        grbl.on_spindle_selected = onSpindleSelected;
 
     } else
         task_run_on_startup(report_warning, "Fans plugin failed to initialize!");
